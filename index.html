@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es-CO">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sala Virtual de Litigio Simulado</title>
+<meta name="description" content="Plataforma académica del Consultorio Jurídico de la Universidad Central para la simulación de procesos por infracción de marca registrada.">
+<link rel="icon" type="image/png" href="img/logo-ucentral.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Titillium+Web:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+<header class="encabezado">
+  <div class="contenedor">
+    <div class="fila">
+      <a class="logo" href="#consulta" aria-label="Universidad Central, inicio de la Sala Virtual"><img src="img/logo-ucentral.png" alt="Universidad Central" width="212" height="56"></a>
+      <div class="cuenta" id="cuenta"></div>
+    </div>
+    <nav class="menu" id="menu" aria-label="Secciones"></nav>
+  </div>
+</header>
+<section class="franja">
+  <div class="contenedor">
+    <h1>Sala Virtual de Litigio Simulado</h1>
+    <p>Consultorio Jurídico, programa de Derecho. Simulación del proceso verbal por infracción de derechos sobre marca registrada.</p>
+    <p class="aviso-simulacion">Plataforma académica. No es un servicio de la Rama Judicial ni de la Superintendencia de Industria y Comercio (SIC); los radicados y las partes son ficticios.</p>
+  </div>
+</section>
+<div class="contenedor"><main id="principal"><div class="vacio">Cargando…</div></main></div>
+<footer class="pie">
+  <div class="contenedor fila">
+    <div>Universidad Central · Facultad de Ciencias Empresariales y Jurídicas · Consultorio Jurídico<br>Bogotá D. C., Colombia</div>
+    <div><a href="#privacidad">Aviso de privacidad y tratamiento de datos</a><br><a href="#guia">Guía del proceso</a></div>
+  </div>
+</footer>
+<div id="dialogo"></div>
+<div id="mensaje" class="oculto" role="status" aria-live="polite"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
+<script src="js/config.js"></script>
+<script src="js/catalogo.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

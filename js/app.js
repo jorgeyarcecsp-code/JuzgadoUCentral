@@ -83,8 +83,12 @@
   }
   async function cargarPerfiles() {
     if (!esDocente()) return;
-    const { data } = await sb.from('perfiles').select('*').order('creado');
-    S.perfiles = data || [];
+    const [pf, pr] = await Promise.all([
+      sb.from('perfiles').select('*').order('creado'),
+      sb.from('roles_preasignados').select('*').order('creado')
+    ]);
+    S.perfiles = pf.data || [];
+    S.preasignados = pr.data || [];
   }
 
   /* ---------- Navegación ---------- */
@@ -370,7 +374,10 @@
   function vAdmin() {
     const filas = S.perfiles.map(u => '<tr><td>' + esc(u.nombre) + '</td><td>' + esc(u.correo) + '</td><td>' + esc(u.grupo || '') + '</td><td>' + esc(nombreRol(u.rol_solicitado)) + '</td><td class="num">' + esc(fechaHora(u.creado)) + '</td><td><select class="sel-rol" data-u="' + u.id + '" aria-label="Rol asignado a ' + esc(u.nombre) + '"><option value="">Sin asignar</option>' + Object.entries(ROLES).map(([k, n]) => '<option value="' + k + '"' + (u.rol === k ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select></td></tr>').join('');
     const pend = S.perfiles.filter(u => !u.rol).length;
-    return '<section class="panel"><div class="panel-cab"><h2>Usuarios y roles</h2><span class="peq suave">' + S.perfiles.length + ' usuarios, ' + pend + ' pendientes de rol</span></div>' + (filas ? '<div class="tabla"><table><thead><tr><th>Nombre</th><th>Correo</th><th>Grupo</th><th>Rol solicitado</th><th>Registro</th><th>Rol asignado</th></tr></thead><tbody>' + filas + '</tbody></table></div>' : '<div class="vacio">Aún no hay usuarios registrados.</div>') + '</section>' +
+    const registrados = new Set(S.perfiles.map(u => u.correo));
+    const pre = (S.preasignados || []).map(x => '<tr><td>' + esc(x.nombre || '') + '</td><td>' + esc(x.correo) + '</td><td>' + esc(nombreRol(x.rol)) + '</td><td>' + (registrados.has(x.correo) ? '<span class="marca activa">Registrado</span>' : '<span class="marca alerta">Pendiente de registro</span>') + '</td><td><button class="boton peq" data-a="quitar-pre" data-c="' + esc(x.correo) + '">Quitar</button></td></tr>').join('');
+    const formPre = '<section class="panel"><div class="panel-cab"><h2>Preasignar roles</h2><span class="peq suave">El estudiante recibe el rol al crear su usuario con este correo</span></div><form id="f-pre" class="rejilla r3"><label for="pre-nombre">Nombre<input type="text" id="pre-nombre" placeholder="Nombre del estudiante"></label><label for="pre-correo"><span class="ob">Correo institucional</span><input type="email" id="pre-correo" placeholder="usuario@' + esc(DOM) + '"></label><label for="pre-rol"><span class="ob">Rol</span><select id="pre-rol">' + Object.entries(ROLES).filter(([k]) => k !== 'docente').map(([k, n]) => '<option value="' + k + '">' + esc(n) + '</option>').join('') + '</select></label><div class="acciones"><button class="boton principal" type="submit">Preasignar</button><span class="peq" id="pre-msg"></span></div></form>' + (pre ? '<div class="tabla" style="margin-top:16px"><table><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th><span class="oculto">Acciones</span></th></tr></thead><tbody>' + pre + '</tbody></table></div>' : '') + '</section>';
+    return formPre + '<section class="panel"><div class="panel-cab"><h2>Usuarios y roles</h2><span class="peq suave">' + S.perfiles.length + ' usuarios, ' + pend + ' pendientes de rol</span></div>' + (filas ? '<div class="tabla"><table><thead><tr><th>Nombre</th><th>Correo</th><th>Grupo</th><th>Rol solicitado</th><th>Registro</th><th>Rol asignado</th></tr></thead><tbody>' + filas + '</tbody></table></div>' : '<div class="vacio">Aún no hay usuarios registrados.</div>') + '</section>' +
       '<form class="panel" id="f-ajustes"><h2 style="margin-bottom:14px">Datos del despacho simulado</h2><div class="rejilla r2"><label for="aj-d1">Despacho de primera instancia<input type="text" id="aj-d1" value="' + esc(S.ajustes.despacho1 || '') + '"></label><label for="aj-j">Juez<input type="text" id="aj-j" value="' + esc(S.ajustes.juez || '') + '"></label><label for="aj-d2">Despacho de segunda instancia<input type="text" id="aj-d2" value="' + esc(S.ajustes.despacho2 || '') + '"></label><label for="aj-m">Magistrado ponente<input type="text" id="aj-m" value="' + esc(S.ajustes.magistrado || '') + '"></label></div><label class="casilla" for="aj-vac" style="margin-top:14px"><input type="checkbox" id="aj-vac"' + (S.ajustes.vacancia ? ' checked' : '') + '> Descontar la vacancia judicial colectiva (Semana Santa, de lunes a miércoles, y del 20 de diciembre al 10 de enero)</label><div class="acciones" style="margin-top:14px"><button class="boton principal" type="submit">Guardar datos</button><button class="boton" type="button" data-a="respaldo">Copiar respaldo del expediente (JSON)</button></div></form>';
   }
 
@@ -411,6 +418,7 @@
       $('dialogo').innerHTML = ''; await cargarTodo(); render(); aviso('Actuación anulada');
     }
     else if (a === 'levantar') { const r = await sb.rpc('levantar_reserva', { p_codigo: b.dataset.c }); if (r.error) aviso(traducirError(r.error)); else { await cargarTodo(); render(); aviso('Reserva levantada'); } }
+    else if (a === 'quitar-pre') { const r = await sb.rpc('quitar_preasignacion', { p_correo: b.dataset.c }); if (r.error) aviso(traducirError(r.error)); else { await cargarPerfiles(); render(); aviso('Preasignación retirada'); } }
     else if (a === 'respaldo') { const datos = { procesos: [...S.procesos.values()], actuaciones: S.acts, exportado: new Date().toISOString() }; try { await navigator.clipboard.writeText(JSON.stringify(datos, null, 2)); aviso('Respaldo copiado al portapapeles'); } catch (x) { aviso('No se pudo copiar'); } }
   });
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('tr[data-a="abrir"]')) ir('p-' + e.target.dataset.r); if (e.key === 'Escape') $('dialogo').innerHTML = ''; });
@@ -457,6 +465,13 @@
       const msg = $('n-msg'); const c = $('n-clave').value; if (c.length < 8) { msg.textContent = 'La contraseña debe tener al menos 8 caracteres.'; return; }
       const { error } = await sb.auth.updateUser({ password: c });
       if (error) msg.textContent = traducirError(error); else { S.recuperacion = false; aviso('Contraseña actualizada'); ir('consulta'); }
+    }
+    else if (f.id === 'f-pre') {
+      const msg = $('pre-msg'); const correo = v('pre-correo').toLowerCase();
+      if (!new RegExp('^[^@\\s]+@' + DOM.replace(/\./g, '\\.') + '$').test(correo)) { msg.innerHTML = '<span style="color:var(--rojo)">Use un correo @' + esc(DOM) + '.</span>'; return; }
+      const r = await sb.rpc('preasignar_rol', { p_correo: correo, p_rol: v('pre-rol'), p_nombre: v('pre-nombre') });
+      if (r.error) { msg.innerHTML = '<span style="color:var(--rojo)">' + esc(traducirError(r.error)) + '</span>'; return; }
+      await cargarPerfiles(); render(); aviso('Rol preasignado a ' + correo);
     }
     else if (f.id === 'f-ajustes') {
       const r = await sb.from('ajustes').update({ despacho1: v('aj-d1'), juez: v('aj-j') || null, despacho2: v('aj-d2'), magistrado: v('aj-m') || null, vacancia: $('aj-vac').checked, actualizado: new Date().toISOString() }).eq('id', 1);

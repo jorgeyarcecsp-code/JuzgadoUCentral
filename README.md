@@ -33,6 +33,7 @@ Antes de publicar el sitio, solicite el visto bueno de la dependencia encargada 
    - `supabase/01_esquema.sql`: crea las tablas, las reglas de acceso, las funciones de radicación y el depósito de archivos. Antes de ejecutarlo, confirme en la sección 1 el dominio (`ucentral.edu.co`) y el correo del docente administrador.
    - `supabase/02_catalogo.sql`: crea las etapas y los tipos de actuación.
    - `supabase/03_ejemplo.sql` (opcional): crea el proceso de ejemplo CUMBRE ANDINA.
+   - `supabase/04_preasignaciones.sql`: permite al docente preasignar roles por correo institucional antes de que el estudiante se registre.
 3. En **Authentication > Sign In / Providers > Email**, mantenga activa la opción *Confirm email*.
 4. En **Authentication > URL Configuration**:
    - en *Site URL*, escriba la dirección pública del sitio (paso 3);
@@ -58,7 +59,7 @@ Edite `js/config.js` con los dos valores del paso anterior. La clave anónima es
 
 1. Cree su usuario en el sitio con el correo de docente configurado. La cuenta recibe el rol de docente automáticamente.
 2. Comparta la dirección con los estudiantes. Cada uno crea su usuario con el correo institucional, confirma el enlace recibido y espera la asignación de rol.
-3. En **Administración**, asigne los roles y registre los datos del despacho simulado.
+3. En **Administración**, preasigne los roles por correo (el estudiante los recibe al registrarse) o asígnelos a los usuarios ya registrados, y registre los datos del despacho simulado.
 
 ## Actualizar el catálogo de actuaciones
 

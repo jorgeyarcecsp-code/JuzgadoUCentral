@@ -52,7 +52,7 @@ Edite `js/config.js` con los dos valores del paso anterior. La clave anónima es
 
 1. En el repositorio, abra **Settings > Pages**.
 2. En *Source*, seleccione **Deploy from a branch**, rama `main`, carpeta `/ (root)`.
-3. La dirección pública será `https://USUARIO.github.io/sala-litigio-simulado/`. Regístrela en Supabase (paso 1.4).
+3. La dirección pública será `https://jorgeyarcecsp-code.github.io/JuzgadoUCentral/`. Regístrela en Supabase (paso 1.4).
 
 ### 4. Primer ingreso
 

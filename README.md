@@ -9,6 +9,7 @@ Plataforma académica del Consultorio Jurídico de la Universidad Central para s
 - **Docente administrador:** la cuenta registrada con el correo definido en la configuración recibe el rol de docente. Desde Administración asigna los roles de juez, secretaría, magistrado, partes, perito u observador.
 - **Radicación con numeración automática:** el escrito inicial asigna el radicado consecutivo y cada actuación recibe su número dentro del proceso. El servidor valida que cada rol radique solo lo que le corresponde.
 - **Documentos privados:** se cargan archivos PDF, de imagen o de texto de hasta 20 MB, con huella SHA-256. Solo los consultan los participantes con rol asignado.
+- **Calendario de audiencias:** el despacho programa cada audiencia desde un calendario mensual. La programación queda como auto con número consecutivo y fijación en estado, y la audiencia lleva su enlace de Google Meet. Cada audiencia se puede agregar a Google Calendar o descargar como invitación .ics. El público ve la fecha y el tipo de audiencia, no el enlace.
 - **Términos en días hábiles:** el cálculo excluye los festivos colombianos y, de forma opcional, la vacancia judicial.
 
 ## Identidad y estilo
@@ -34,6 +35,7 @@ Antes de publicar el sitio, solicite el visto bueno de la dependencia encargada 
    - `supabase/02_catalogo.sql`: crea las etapas y los tipos de actuación.
    - `supabase/03_ejemplo.sql` (opcional): crea el proceso de ejemplo CUMBRE ANDINA.
    - `supabase/04_preasignaciones.sql`: permite al docente preasignar roles por correo institucional antes de que el estudiante se registre.
+   - `supabase/05_audiencias.sql`: agrega el enlace de Google Meet a las audiencias, visible solo para participantes registrados.
 3. En **Authentication > Sign In / Providers > Email**, mantenga activa la opción *Confirm email*.
 4. En **Authentication > URL Configuration**:
    - en *Site URL*, escriba la dirección pública del sitio (paso 3);

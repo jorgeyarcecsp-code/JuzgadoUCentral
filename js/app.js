@@ -17,7 +17,8 @@
   const S = {
     session: null, perfil: null, ajustes: {}, procesos: new Map(), acts: [], docs: [], perfiles: [],
     view: 'consulta', proc: null, ptab: 'actuaciones', qmode: 'radicado', q: {}, estDate: ymd(new Date()),
-    cargando: true, error: null, recuperacion: false, radProc: null, ultimaFirma: '', ultima: null
+    cargando: true, error: null, recuperacion: false, radProc: null, ultimaFirma: '', ultima: null,
+    calMes: ymd(new Date()).slice(0, 7), calSel: null, calNueva: null
   };
 
   /* ---------- Utilidades ---------- */
@@ -133,6 +134,7 @@
     h += (V[S.view] || vConsulta)();
     M.innerHTML = h;
     if (S.view === 'radicar') dinamicoRadicar();
+    if (S.view === 'agenda' && $('ap-anot') && !$('ap-anot').value) textoAuto();
   }
 
   /* ---------- Cifras de resumen ---------- */
@@ -209,9 +211,90 @@
     const filas = S.docs.filter(d => porCodigo[d.codigo]).sort((a, b) => porCodigo[a.codigo].numero - porCodigo[b.codigo].numero || a.creado.localeCompare(b.creado)).map((d, i) => { const a = porCodigo[d.codigo]; return '<tr><td class="num">' + (i + 1) + '</td><td><button class="boton enlace" data-a="doc" data-ruta="' + esc(d.ruta) + '">' + esc(d.nombre) + '</button></td><td class="num">' + pad(a.numero, 4) + '</td><td>' + esc(a.nombre) + '</td><td class="num">' + esc(a.fecha) + '</td><td class="num">' + tamano(d.tamano || 0) + '</td><td>' + esc(nombreRol(a.rol)) + '</td><td class="num peq" title="' + esc(d.sha256 || '') + '">' + esc((d.sha256 || '').slice(0, 16)) + '</td></tr>'; }).join('');
     return '<p class="nota">Índice electrónico del expediente: documentos en orden cronológico, con la huella SHA-256 calculada al momento de la carga para verificar su integridad.</p><div class="tabla" style="margin-top:12px"><table><thead><tr><th>Orden</th><th>Documento</th><th>Actuación</th><th>Tipo de actuación</th><th>Fecha</th><th>Tamaño</th><th>Origen</th><th>Huella SHA-256 (inicio)</th></tr></thead><tbody>' + (filas || '<tr><td colspan="8" class="vacio">Sin documentos cargados.</td></tr>') + '</tbody></table></div>';
   }
+  function celdaEnlace(a) {
+    if (!S.session) return '<span class="suave peq">Enlace disponible para participantes registrados</span>';
+    return a.enlace_reunion ? '<a class="boton peq principal" href="' + esc(a.enlace_reunion) + '" target="_blank" rel="noopener">Unirse por Google Meet</a>' : '<span class="suave peq">Sin enlace</span>';
+  }
   function filasAudiencias(lista, conRad) {
     if (!lista.length) return '<div class="vacio">No hay audiencias programadas.</div>';
-    return '<div class="tabla"><table><thead><tr>' + (conRad ? '<th>Proceso</th>' : '') + '<th>Fecha</th><th>Hora</th><th>Audiencia</th><th>Sala o enlace</th><th>Fijada en</th></tr></thead><tbody>' + lista.map(a => '<tr>' + (conRad ? '<td class="num"><a href="#p-' + a.radicado + '">' + fmtRad(a.radicado) + '</a></td>' : '') + '<td>' + esc(fechaLarga(a.audiencia.fecha)) + '</td><td class="num">' + esc(a.audiencia.hora) + '</td><td>' + esc(a.audiencia.tipo) + '</td><td>' + (/^https?:\/\//.test(a.audiencia.lugar || '') ? (S.session ? '<a href="' + esc(a.audiencia.lugar) + '" target="_blank" rel="noopener">Enlace de conexión</a>' : '<span class="suave">Enlace disponible para participantes</span>') : esc(a.audiencia.lugar || '')) + '</td><td class="peq">Actuación ' + pad(a.numero, 4) + '</td></tr>').join('') + '</tbody></table></div>';
+    return '<div class="tabla"><table><thead><tr>' + (conRad ? '<th>Proceso</th>' : '') + '<th>Fecha</th><th>Hora</th><th>Audiencia</th><th>Sala</th><th>Conexión</th><th>Fijada en</th></tr></thead><tbody>' + lista.map(a => '<tr>' + (conRad ? '<td class="num"><a href="#p-' + a.radicado + '">' + fmtRad(a.radicado) + '</a></td>' : '') + '<td>' + esc(fechaLarga(a.audiencia.fecha)) + '</td><td class="num">' + esc(a.audiencia.hora) + ' a ' + esc(horaFin(a)) + '</td><td><button class="boton enlace" data-a="aud-ver" data-c="' + a.codigo + '">' + esc(a.audiencia.tipo) + '</button></td><td>' + esc(a.audiencia.lugar || '') + '</td><td>' + celdaEnlace(a) + '</td><td class="peq">Actuación ' + pad(a.numero, 4) + '</td></tr>').join('') + '</tbody></table></div>';
+  }
+
+  /* ---------- Calendario de audiencias ---------- */
+  const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  const RE_MEET = /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}(\?[^\s]*)?$/i;
+  const listaAudiencias = () => S.acts.filter(a => a.audiencia && a.audiencia.fecha && !a.anulada && visible(a)).sort((a, b) => (a.audiencia.fecha + a.audiencia.hora).localeCompare(b.audiencia.fecha + b.audiencia.hora));
+  function inicioAud(a) { const [y, m, d] = a.audiencia.fecha.split('-').map(Number); const [h, mi] = (a.audiencia.hora || '09:00').split(':').map(Number); return new Date(y, m - 1, d, h, mi); }
+  function finAud(a) { return new Date(inicioAud(a).getTime() + (Number(a.audiencia.duracion) || 120) * 60000); }
+  const horaFin = a => { const f = finAud(a); return pad(f.getHours(), 2) + ':' + pad(f.getMinutes(), 2); };
+  const sello = d => d.getFullYear() + pad(d.getMonth() + 1, 2) + pad(d.getDate(), 2) + 'T' + pad(d.getHours(), 2) + pad(d.getMinutes(), 2) + '00';
+  function textoEvento(a) {
+    const p = S.procesos.get(a.radicado);
+    return { titulo: a.audiencia.tipo + ' · Proceso ' + fmtRad(p ? radInst(p) : a.radicado), detalle: 'Juzgado Universidad Central (simulación académica)\nProceso ' + fmtRad(p ? radInst(p) : a.radicado) + (p ? '\n' + (p.sujetos || []).map(s => s.tipo + ': ' + s.nombre).join('\n') : '') + '\nFijada en la actuación ' + pad(a.numero, 4) + (a.audiencia.lugar ? '\nSala: ' + a.audiencia.lugar : '') + (S.session && a.enlace_reunion ? '\nGoogle Meet: ' + a.enlace_reunion : '') };
+  }
+  function urlGoogleCalendar(a) {
+    const e = textoEvento(a);
+    return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(e.titulo) + '&dates=' + sello(inicioAud(a)) + '/' + sello(finAud(a)) + '&ctz=America/Bogota&details=' + encodeURIComponent(e.detalle) + ((S.session && a.enlace_reunion) ? '&location=' + encodeURIComponent(a.enlace_reunion) : (a.audiencia.lugar ? '&location=' + encodeURIComponent(a.audiencia.lugar) : ''));
+  }
+  function textoIcs(a) {
+    const utc = d => { const u = new Date(d.getTime() + 5 * 3600000); return u.getFullYear() + pad(u.getMonth() + 1, 2) + pad(u.getDate(), 2) + 'T' + pad(u.getHours(), 2) + pad(u.getMinutes(), 2) + '00Z'; };
+    const e = textoEvento(a); const limpio = s => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+    return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Juzgado Universidad Central//Audiencias//ES', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT', 'UID:' + a.codigo + '@juzgado-ucentral', 'DTSTAMP:' + utc(new Date(Date.now() - 5 * 3600000)), 'DTSTART:' + utc(inicioAud(a)), 'DTEND:' + utc(finAud(a)), 'SUMMARY:' + limpio(e.titulo), 'DESCRIPTION:' + limpio(e.detalle), (S.session && a.enlace_reunion) ? 'LOCATION:' + limpio(a.enlace_reunion) : (a.audiencia.lugar ? 'LOCATION:' + limpio(a.audiencia.lugar) : ''), (S.session && a.enlace_reunion) ? 'URL:' + a.enlace_reunion : '', 'BEGIN:VALARM', 'TRIGGER:-PT30M', 'ACTION:DISPLAY', 'DESCRIPTION:' + limpio(e.titulo), 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].filter(Boolean).join('\r\n');
+  }
+  function calendario() {
+    const [y, m] = S.calMes.split('-').map(Number);
+    const primero = new Date(y, m - 1, 1); const desfase = (primero.getDay() + 6) % 7; const dias = new Date(y, m, 0).getDate();
+    const porDia = {}; listaAudiencias().forEach(a => { (porDia[a.audiencia.fecha] = porDia[a.audiencia.fecha] || []).push(a); });
+    const fest = C.festivos(y); let celdas = '';
+    for (let i = 0; i < desfase; i++) celdas += '<div class="cal-dia fuera" aria-hidden="true"></div>';
+    for (let d = 1; d <= dias; d++) {
+      const f = y + '-' + pad(m, 2) + '-' + pad(d, 2); const fecha = new Date(y, m - 1, d); const fin = fecha.getDay() === 0 || fecha.getDay() === 6;
+      const ev = (porDia[f] || []).map(a => '<button class="cal-evento' + (S.calSel === a.codigo ? ' sel' : '') + '" data-a="aud-ver" data-c="' + a.codigo + '"><b>' + esc(a.audiencia.hora) + '</b> ' + esc(a.audiencia.tipo) + '</button>').join('');
+      const puedeProg = esDespacho() && f >= hoy() && !fin && !fest.has(f);
+      celdas += '<div class="cal-dia' + (f === hoy() ? ' hoy' : '') + (fin || fest.has(f) ? ' inhabil' : '') + '"><div class="cal-num">' + d + (fest.has(f) ? ' <span class="peq suave">Festivo</span>' : '') + (puedeProg ? '<button class="cal-mas" data-a="aud-nueva" data-f="' + f + '" aria-label="Programar audiencia el ' + esc(fechaLarga(f)) + '">+</button>' : '') + '</div>' + ev + '</div>';
+    }
+    const resto = (7 - ((desfase + dias) % 7)) % 7; for (let i = 0; i < resto; i++) celdas += '<div class="cal-dia fuera" aria-hidden="true"></div>';
+    const titulo = MESES[m - 1].charAt(0).toUpperCase() + MESES[m - 1].slice(1) + ' de ' + y;
+    return '<div class="panel-cab"><h2>Calendario de audiencias</h2><div class="acciones"><button class="boton peq" data-a="mes" data-d="-1" aria-label="Mes anterior">Anterior</button><span class="cal-titulo">' + esc(titulo) + '</span><button class="boton peq" data-a="mes" data-d="1" aria-label="Mes siguiente">Siguiente</button><button class="boton peq" data-a="mes" data-d="0">Hoy</button></div></div><div class="cal-envoltura"><div class="cal">' + DIAS.map(d => '<div class="cal-cab">' + d + '</div>').join('') + celdas + '</div></div>';
+  }
+  function detalleAudiencia() {
+    const a = S.acts.find(x => x.codigo === S.calSel); if (!a || !a.audiencia) return '';
+    const p = S.procesos.get(a.radicado);
+    const editar = esDespacho() ? '<form id="f-aud-editar" class="rejilla r3" data-c="' + a.codigo + '" style="margin-top:14px"><label for="ae-enlace">Enlace de Google Meet<input type="url" id="ae-enlace" value="' + esc(a.enlace_reunion || '') + '" placeholder="https://meet.google.com/abc-defg-hij"></label><label for="ae-sala">Sala<input type="text" id="ae-sala" value="' + esc(a.audiencia.lugar || '') + '"></label><div class="acciones"><button class="boton" type="submit">Actualizar enlace y sala</button><span class="peq" id="ae-msg"></span></div></form><p class="peq suave" style="margin:6px 0 0">Para cambiar la fecha o la hora, el despacho debe proferir un nuevo auto que fije la audiencia.</p>' : '';
+    return '<section class="panel" id="aud-detalle"><div class="panel-cab"><h2>' + esc(a.audiencia.tipo) + '</h2><button class="boton peq" data-a="aud-cerrar">Cerrar</button></div><div class="ficha"><div>Proceso</div><div><a href="#p-' + a.radicado + '">' + fmtRad(p ? radInst(p) : a.radicado) + '</a>' + (p ? '<br><span class="peq">' + (p.sujetos || []).map(s => esc(s.tipo + ': ' + s.nombre)).join('<br>') + '</span>' : '') + '</div><div>Fecha</div><div>' + esc(fechaLarga(a.audiencia.fecha)) + '</div><div>Hora</div><div>' + esc(a.audiencia.hora + ' a ' + horaFin(a)) + ' (hora de Colombia)</div><div>Sala</div><div>' + esc(a.audiencia.lugar || 'Virtual') + '</div><div>Conexión</div><div>' + celdaEnlace(a) + '</div><div>Fijada en</div><div>Actuación ' + pad(a.numero, 4) + ': ' + esc(a.nombre) + ' (' + esc(a.fecha) + ')</div></div><div class="acciones" style="margin-top:14px"><a class="boton" href="' + esc(urlGoogleCalendar(a)) + '" target="_blank" rel="noopener">Agregar a Google Calendar</a><button class="boton" data-a="aud-ics" data-c="' + a.codigo + '">Descargar invitación (.ics)</button></div>' + editar + '</section>';
+  }
+  function formProgramar() {
+    if (!esDespacho()) return '';
+    const r = rol(); const tipos = (r === 'docente' ? TYPES : TYPES.filter(t => t.r.includes(r))).filter(t => t.aud);
+    if (!tipos.length) return '<section class="panel" id="aud-programar"><h2>Programar audiencia</h2><p class="suave">Su rol no fija audiencias. Lo hacen el juez, el magistrado o el docente.</p></section>';
+    const ps = [...S.procesos.values()].filter(p => p.estado !== 'Terminado').sort((a, b) => a.radicado.localeCompare(b.radicado));
+    return '<form class="panel" id="f-aud-prog" novalidate><div class="panel-cab"><h2>Programar audiencia</h2><span class="peq suave">Se registra como auto que fija la audiencia, con número consecutivo y fijación en estado</span></div><div class="rejilla r2"><label for="ap-proc"><span class="ob">Proceso</span><select id="ap-proc">' + ps.map(p => '<option value="' + p.radicado + '"' + (S.radProc === p.radicado ? ' selected' : '') + '>' + fmtRad(radInst(p)) + ' · ' + esc((p.sujetos || []).map(s => s.nombre).join(' contra ')) + '</option>').join('') + '</select></label><label for="ap-tipo"><span class="ob">Audiencia</span><select id="ap-tipo">' + tipos.map(t => '<option value="' + t.k + '">' + esc(t.aud) + '</option>').join('') + '</select></label></div><div class="rejilla r3" style="margin-top:14px"><label for="ap-fecha"><span class="ob">Fecha</span><input type="date" id="ap-fecha" min="' + hoy() + '" value="' + esc(S.calNueva || '') + '"></label><label for="ap-hora"><span class="ob">Hora de inicio</span><input type="time" id="ap-hora" value="09:00" step="900"></label><label for="ap-dur">Duración<select id="ap-dur"><option value="60">1 hora</option><option value="90">1 hora y 30 minutos</option><option value="120" selected>2 horas</option><option value="180">3 horas</option><option value="240">4 horas</option></select></label></div><fieldset style="margin-top:14px"><legend>Conexión virtual</legend><div class="acciones"><a class="boton" href="https://meet.google.com/new" target="_blank" rel="noopener">Crear reunión en Google Meet</a><span class="peq suave">Se abre en otra pestaña. Copie el enlace de la reunión y péguelo abajo.</span></div><div class="rejilla r2"><label for="ap-enlace">Enlace de Google Meet<input type="url" id="ap-enlace" placeholder="https://meet.google.com/abc-defg-hij"></label><label for="ap-sala">Sala (si es presencial o mixta)<input type="text" id="ap-sala" placeholder="Sala de audiencias del Consultorio Jurídico"></label></div></fieldset><div class="rejilla r2" style="margin-top:14px"><label for="ap-firma"><span class="ob">Firmante</span><input type="text" id="ap-firma" value="' + esc(S.ultimaFirma || (S.perfil ? S.perfil.nombre : '')) + '"></label><div></div></div><label for="ap-anot" style="margin-top:14px"><span class="ob">Texto del auto</span><textarea id="ap-anot"></textarea></label><div class="acciones" style="margin-top:14px"><button class="boton principal" type="submit" id="ap-enviar">Programar y fijar en estado</button><span class="peq" id="ap-msg"></span></div></form>';
+  }
+  function textoAuto() {
+    const t = TMAP[$('ap-tipo').value]; const f = $('ap-fecha').value, h = $('ap-hora').value, enl = $('ap-enlace').value.trim(), sala = $('ap-sala').value.trim();
+    if (!t || !f || !h) return;
+    const modo = enl && sala ? 'de manera mixta, en ' + sala + ' y por Google Meet' : enl ? 'de manera virtual por Google Meet' : sala ? 'de manera presencial en ' + sala : 'en la forma que oportunamente se comunique';
+    $('ap-anot').value = 'Fija el ' + fechaLarga(f) + ', a las ' + h + ', para llevar a cabo la ' + t.aud.charAt(0).toLowerCase() + t.aud.slice(1) + ' (' + t.norma + '), que se realizará ' + modo + ' (Ley 2213 de 2022, art. 7). Se advierte a las partes y apoderados sobre su deber de comparecer.';
+  }
+  async function enviarProgramacion() {
+    const v = id => ($(id) ? $(id).value.trim() : ''); const msg = $('ap-msg'); const k = v('ap-tipo'), t = TMAP[k];
+    const f = v('ap-fecha'), h = v('ap-hora'), enl = v('ap-enlace'), rad = v('ap-proc'), dur = Number(v('ap-dur')) || 120; const falta = [];
+    if (!rad) falta.push('proceso'); if (!f) falta.push('fecha'); if (!h) falta.push('hora'); if (!v('ap-firma')) falta.push('firmante'); if (!v('ap-anot')) falta.push('texto del auto');
+    if (f && f < hoy()) falta.push('una fecha futura');
+    if (f && !C.esHabil(C.parseD(f), vac())) falta.push('un día hábil (la fecha elegida es fin de semana, festivo o vacancia)');
+    if (enl && !RE_MEET.test(enl)) falta.push('un enlace de Google Meet válido, del tipo https://meet.google.com/abc-defg-hij');
+    if (!enl && !v('ap-sala')) falta.push('el enlace de Google Meet o la sala');
+    if (falta.length) { msg.innerHTML = '<span style="color:var(--rojo)">Revise: ' + esc(falta.join('; ')) + '.</span>'; return; }
+    const ini = new Date(...f.split('-').map((x, i) => i === 1 ? Number(x) - 1 : Number(x)), ...h.split(':').map(Number)); const fin = new Date(ini.getTime() + dur * 60000);
+    const choque = listaAudiencias().find(a => a.audiencia.fecha === f && inicioAud(a) < fin && finAud(a) > ini);
+    if (choque) { msg.innerHTML = '<span style="color:var(--rojo)">El despacho ya tiene ese día una ' + esc(choque.audiencia.tipo.toLowerCase()) + ' de ' + esc(choque.audiencia.hora + ' a ' + horaFin(choque)) + '. Elija otra hora.</span>'; return; }
+    $('ap-enviar').disabled = true; msg.textContent = 'Registrando el auto…';
+    const a = { tipo: k, fecha: hoy(), anotacion: v('ap-anot'), firmante: v('ap-firma'), fecha_estado: siguienteHabil(hoy(), vac()), reservada: false, destinatarios: ['demandante', 'demandado', 'perito', 'secretaria'], enlaces: [], audiencia: { tipo: t.aud, fecha: f, hora: h, duracion: dur, lugar: v('ap-sala') }, enlace_reunion: enl || null };
+    S.ultimaFirma = v('ap-firma');
+    const r = await sb.rpc('radicar_actuacion', { p_radicado: rad, a });
+    if (r.error) { msg.innerHTML = '<span style="color:var(--rojo)">' + esc(traducirError(r.error)) + '</span>'; $('ap-enviar').disabled = false; return; }
+    await cargarTodo(); S.calSel = r.data.codigo; S.calMes = f.slice(0, 7); S.calNueva = null; S.ultima = Object.assign({}, r.data, { anexos: [] });
+    render(); mostrarConstancia(S.ultima, false, []); aviso('Audiencia programada');
   }
   function pAudiencias(p) { return filasAudiencias(actsDe(p.radicado).filter(a => a.audiencia && !a.anulada && visible(a)).sort((a, b) => (a.audiencia.fecha + a.audiencia.hora).localeCompare(b.audiencia.fecha + b.audiencia.hora)), false); }
 
@@ -243,7 +326,7 @@
     const def = desp ? (provid ? ['demandante', 'demandado'] : ['juez']) : (inst >= 2 ? ['magistrado'] : ['juez', 'secretaria']);
     if (k === 'dictamen' || k === 'perito_aclara') def.push('demandante', 'demandado');
     document.querySelectorAll('.f-dest').forEach(c => { c.checked = def.includes(c.value); });
-    $('f-aud').innerHTML = t.aud ? '<fieldset><legend>' + esc(t.aud) + '</legend><div class="rejilla r3"><label for="a-fecha"><span class="ob">Fecha</span><input type="date" id="a-fecha"></label><label for="a-hora"><span class="ob">Hora</span><input type="time" id="a-hora" value="09:00"></label><label for="a-lugar">Sala o enlace<input type="text" id="a-lugar" placeholder="Sala de audiencias del Consultorio Jurídico o enlace"></label></div></fieldset>' : '';
+    $('f-aud').innerHTML = t.aud ? '<fieldset><legend>' + esc(t.aud) + '</legend><div class="rejilla r3"><label for="a-fecha"><span class="ob">Fecha</span><input type="date" id="a-fecha"></label><label for="a-hora"><span class="ob">Hora</span><input type="time" id="a-hora" value="09:00"></label><label for="a-dur">Duración<select id="a-dur"><option value="60">1 hora</option><option value="90">1 hora y 30 minutos</option><option value="120" selected>2 horas</option><option value="180">3 horas</option><option value="240">4 horas</option></select></label><label for="a-lugar">Sala<input type="text" id="a-lugar" placeholder="Sala de audiencias del Consultorio Jurídico"></label><label for="a-enlace">Enlace de Google Meet<input type="url" id="a-enlace" placeholder="https://meet.google.com/abc-defg-hij"></label></div><p class="peq suave" style="margin:0"><a href="https://meet.google.com/new" target="_blank" rel="noopener">Crear reunión en Google Meet</a> y pegar aquí el enlace.</p></fieldset>' : '';
     vistaTermino();
   }
   function vistaTermino() {
@@ -272,6 +355,7 @@
     if (nuevo) [['n-dte', 'demandante'], ['n-dte-ap', 'apoderado de la parte demandante'], ['n-ddo', 'demandado'], ['n-signo', 'marca registrada'], ['n-reg', 'certificado de registro'], ['n-cuest', 'signo cuestionado']].forEach(([i, n]) => { if (!v(i)) falta.push(n); });
     if (t.aud && (!v('a-fecha') || !v('a-hora'))) falta.push('fecha y hora de la audiencia');
     const enlace = v('f-enlace'); if (enlace && !/^https:\/\//i.test(enlace)) falta.push('enlace válido que inicie con https://');
+    const enlaceAud = v('a-enlace'); if (t.aud && enlaceAud && !RE_MEET.test(enlaceAud)) falta.push('un enlace de Google Meet válido, del tipo https://meet.google.com/abc-defg-hij');
     const archivos = [...($('f-arch').files || [])];
     archivos.forEach(f => { if (f.size > 20971520) falta.push('“' + f.name + '” supera 20 MB'); else if (!MIMES.includes(f.type)) falta.push('“' + f.name + '” no es PDF, imagen o texto'); });
     if (falta.length) { st.innerHTML = '<span style="color:var(--rojo)">Revise: ' + esc(falta.join('; ')) + '.</span>'; return; }
@@ -285,7 +369,7 @@
         termino_dias: dias || null, termino_label: dias ? (t.tl || 'Término') : null,
         inicio_termino: tr ? tr.inicio : null, fin_termino: tr ? tr.fin : null, fecha_estado: fechaEstado,
         reservada: $('f-res').checked, destinatarios: [...document.querySelectorAll('.f-dest:checked')].map(c => c.value),
-        enlaces: enlace ? [enlace] : [], audiencia: t.aud ? { tipo: t.aud, fecha: v('a-fecha'), hora: v('a-hora'), lugar: v('a-lugar') } : null
+        enlaces: enlace ? [enlace] : [], audiencia: t.aud ? { tipo: t.aud, fecha: v('a-fecha'), hora: v('a-hora'), duracion: Number(v('a-dur')) || 120, lugar: v('a-lugar') } : null, enlace_reunion: t.aud && enlaceAud ? enlaceAud : null
       };
       S.ultimaFirma = v('f-firma');
       let res;
@@ -339,8 +423,8 @@
     return '<section class="panel"><div class="panel-cab"><h2>Términos en curso</h2><span class="peq suave">' + (r === 'docente' ? 'Todos los procesos' : 'Dirigidos a: ' + esc(nombreRol(r))) + '</span></div>' + (terms.length ? '<div class="tabla"><table><thead><tr><th>Días hábiles restantes</th><th>Término</th><th>Proceso</th><th>Actuación que lo origina</th><th>Inicia</th><th>Vence</th></tr></thead><tbody>' + terms.map(a => { const n = habilesHasta(a.fin_termino, hoy(), vac()); return '<tr><td class="num"><span class="punto ' + sev(n) + '"></span>' + n + '</td><td>' + esc(a.termino_label || 'Término') + '</td><td class="num"><a href="#p-' + a.radicado + '">' + fmtRad(a.radicado) + '</a></td><td>' + esc(a.nombre) + '</td><td class="num">' + esc(a.inicio_termino) + '</td><td class="num">' + esc(a.fin_termino) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="vacio">No hay términos en curso.</div>') + '</section><section class="panel"><h2 style="margin-bottom:14px">Comunicaciones recibidas</h2>' + (coms.length ? '<div class="tabla"><table><thead><tr><th>Registrada</th><th>Proceso</th><th>Actuación</th><th>Remite</th></tr></thead><tbody>' + coms.map(a => '<tr><td class="num">' + esc(fechaHora(a.registrado)) + '</td><td class="num"><a href="#p-' + a.radicado + '">' + fmtRad(a.radicado) + '</a></td><td>' + esc(a.nombre) + '<br><span class="peq">' + esc(a.anotacion) + '</span></td><td class="peq">' + esc(nombreRol(a.rol)) + '</td></tr>').join('') + '</tbody></table></div>' : '<div class="vacio">Sin comunicaciones.</div>') + '</section>';
   }
   function vAgenda() {
-    const l = S.acts.filter(a => a.audiencia && !a.anulada && visible(a)).sort((a, b) => (a.audiencia.fecha + a.audiencia.hora).localeCompare(b.audiencia.fecha + b.audiencia.hora));
-    return '<section class="panel"><h2 style="margin-bottom:14px">Próximas audiencias</h2>' + filasAudiencias(l.filter(a => a.audiencia.fecha >= hoy()), true) + '</section><section class="panel"><h2 style="margin-bottom:14px">Audiencias celebradas</h2>' + filasAudiencias(l.filter(a => a.audiencia.fecha < hoy()).reverse(), true) + '</section>';
+    const l = listaAudiencias();
+    return '<section class="panel">' + calendario() + (esDespacho() ? '<p class="peq suave" style="margin:10px 0 0">Use el signo + de un día hábil para programar una audiencia en esa fecha.</p>' : '') + '</section>' + detalleAudiencia() + formProgramar() + '<section class="panel"><h2 style="margin-bottom:14px">Próximas audiencias</h2>' + filasAudiencias(l.filter(a => a.audiencia.fecha >= hoy()), true) + '</section><section class="panel"><h2 style="margin-bottom:14px">Audiencias celebradas</h2>' + filasAudiencias(l.filter(a => a.audiencia.fecha < hoy()).reverse(), true) + '</section>';
   }
 
   /* ---------- Guía y aviso de privacidad ---------- */
@@ -418,6 +502,11 @@
       $('dialogo').innerHTML = ''; await cargarTodo(); render(); aviso('Actuación anulada');
     }
     else if (a === 'levantar') { const r = await sb.rpc('levantar_reserva', { p_codigo: b.dataset.c }); if (r.error) aviso(traducirError(r.error)); else { await cargarTodo(); render(); aviso('Reserva levantada'); } }
+    else if (a === 'mes') { const d = Number(b.dataset.d); if (!d) S.calMes = hoy().slice(0, 7); else { const [y, m] = S.calMes.split('-').map(Number); const n = new Date(y, m - 1 + d, 1); S.calMes = n.getFullYear() + '-' + pad(n.getMonth() + 1, 2); } render(); }
+    else if (a === 'aud-ver') { S.calSel = b.dataset.c; const x = S.acts.find(y => y.codigo === b.dataset.c); if (x && x.audiencia) S.calMes = x.audiencia.fecha.slice(0, 7); if (S.view !== 'agenda') ir('agenda'); else { render(); const el = $('aud-detalle'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }
+    else if (a === 'aud-cerrar') { S.calSel = null; render(); }
+    else if (a === 'aud-nueva') { S.calNueva = b.dataset.f; render(); const el = $('aud-programar') || $('f-aud-prog'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); const h = $('ap-hora'); if (h) h.focus(); }
+    else if (a === 'aud-ics') { const x = S.acts.find(y => y.codigo === b.dataset.c); const url = URL.createObjectURL(new Blob([textoIcs(x)], { type: 'text/calendar;charset=utf-8' })); const enl = document.createElement('a'); enl.href = url; enl.download = 'audiencia-' + x.codigo + '.ics'; document.body.appendChild(enl); enl.click(); enl.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000); }
     else if (a === 'quitar-pre') { const r = await sb.rpc('quitar_preasignacion', { p_correo: b.dataset.c }); if (r.error) aviso(traducirError(r.error)); else { await cargarPerfiles(); render(); aviso('Preasignación retirada'); } }
     else if (a === 'respaldo') { const datos = { procesos: [...S.procesos.values()], actuaciones: S.acts, exportado: new Date().toISOString() }; try { await navigator.clipboard.writeText(JSON.stringify(datos, null, 2)); aviso('Respaldo copiado al portapapeles'); } catch (x) { aviso('No se pudo copiar'); } }
   });
@@ -428,6 +517,8 @@
     else if (t.id === 'f-tipo') cambioTipo();
     else if (['f-dias', 'f-fecha', 'f-estado'].includes(t.id)) vistaTermino();
     else if (t.id === 'n-conoc') notaPrescripcion();
+    else if (['ap-tipo', 'ap-fecha', 'ap-hora', 'ap-enlace', 'ap-sala'].includes(t.id)) textoAuto();
+    else if (t.id === 'ap-proc') S.radProc = t.value;
     else if (t.id === 'est-fecha') { S.estDate = t.value || hoy(); render(); }
     else if (t.id === 'sel-etapa') { const r = await sb.rpc('cambiar_etapa', { p_radicado: t.dataset.r, p_etapa: t.value }); if (r.error) aviso(traducirError(r.error)); else { await cargarTodo(); render(); aviso('Etapa actualizada'); } }
     else if (t.classList.contains('sel-rol')) { const r = await sb.rpc('asignar_rol', { p_usuario: t.dataset.u, p_rol: t.value }); if (r.error) aviso(traducirError(r.error)); else { await cargarPerfiles(); aviso('Rol asignado'); } }
@@ -465,6 +556,14 @@
       const msg = $('n-msg'); const c = $('n-clave').value; if (c.length < 8) { msg.textContent = 'La contraseña debe tener al menos 8 caracteres.'; return; }
       const { error } = await sb.auth.updateUser({ password: c });
       if (error) msg.textContent = traducirError(error); else { S.recuperacion = false; aviso('Contraseña actualizada'); ir('consulta'); }
+    }
+    else if (f.id === 'f-aud-prog') enviarProgramacion();
+    else if (f.id === 'f-aud-editar') {
+      const msg = $('ae-msg'); const enl = v('ae-enlace');
+      if (enl && !RE_MEET.test(enl)) { msg.innerHTML = '<span style="color:var(--rojo)">Use un enlace de Google Meet válido, del tipo https://meet.google.com/abc-defg-hij.</span>'; return; }
+      const r = await sb.rpc('actualizar_audiencia', { p_codigo: f.dataset.c, p_enlace: enl, p_sala: v('ae-sala') });
+      if (r.error) { msg.innerHTML = '<span style="color:var(--rojo)">' + esc(traducirError(r.error)) + '</span>'; return; }
+      await cargarTodo(); render(); aviso('Datos de la audiencia actualizados');
     }
     else if (f.id === 'f-pre') {
       const msg = $('pre-msg'); const correo = v('pre-correo').toLowerCase();
@@ -504,7 +603,7 @@
       }
     });
     setInterval(async () => {
-      if (document.hidden || S.view === 'radicar' || S.view === 'admin') return;
+      if (document.hidden || S.view === 'radicar' || S.view === 'admin' || (S.view === 'agenda' && esDespacho())) return;
       const ae = document.activeElement; if (ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName)) return;
       await cargarTodo(); if (S.view === 'proceso') await cargarDocs(S.proc); render();
     }, 60000);

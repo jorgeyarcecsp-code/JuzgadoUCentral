@@ -124,6 +124,21 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .etapa.hecha { border-top-color: var(--verde); color: var(--negro); }
 .etapa.actual { border-top-color: var(--oliva); color: var(--negro); font-weight: 700; }
 
+/* Calendario de audiencias */
+.cal-envoltura { overflow-x: auto; }
+.cal { display: grid; grid-template-columns: repeat(7, minmax(110px, 1fr)); border: 1px solid var(--linea); border-radius: 6px; overflow: hidden; min-width: 770px; }
+.cal-cab { background: var(--crema); font-family: var(--titulos); font-weight: 600; padding: 8px 10px; font-size: .88rem; }
+.cal-dia { min-height: 104px; padding: 6px 8px; border-top: 1px solid var(--linea); border-left: 1px solid var(--linea); display: flex; flex-direction: column; gap: 4px; background: var(--blanco); }
+.cal-dia:nth-child(7n+1) { border-left: 0; }
+.cal-dia.fuera { background: var(--fondo); }
+.cal-dia.inhabil { background: #F7F3EA; }
+.cal-dia.hoy { box-shadow: inset 0 0 0 2px var(--oliva); }
+.cal-num { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.cal-mas { border: 1px solid var(--verde); background: var(--blanco); color: var(--verde); border-radius: 50%; width: 24px; height: 24px; line-height: 1; cursor: pointer; font-size: 1rem; }
+.cal-mas:hover { background: var(--verde); color: var(--blanco); }
+.cal-evento { text-align: left; border: 0; border-left: 3px solid var(--verde); background: #EEF0D9; color: var(--negro); border-radius: 3px; padding: 3px 6px; font: 400 .78rem/1.3 var(--texto); cursor: pointer; }
+.cal-evento:hover, .cal-evento.sel { background: var(--verde); color: var(--blanco); }
+.cal-titulo { font-family: var(--titulos); font-weight: 700; font-size: 1.05rem; min-width: 170px; text-align: center; }
 .nota { background: var(--fondo); border-left: 4px solid var(--verde); padding: 10px 14px; font-size: .9rem; border-radius: 0 4px 4px 0; }
 .nota.alerta { border-left-color: var(--naranja); }
 .nota.error { border-left-color: var(--rojo); }

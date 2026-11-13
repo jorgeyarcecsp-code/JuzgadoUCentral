@@ -6,6 +6,8 @@ Plataforma académica del Consultorio Jurídico de la Universidad Central para s
 
 - **Consulta pública sin registro:** por número de radicación (23 dígitos), por nombre o razón social, por construcción del número y por despacho y clase de proceso. Muestra los datos del proceso, los sujetos procesales, la etapa, las actuaciones, los estados electrónicos y las audiencias.
 - **Registro limitado al correo institucional:** solo se crean usuarios con correo @ucentral.edu.co. El servidor rechaza cualquier otro dominio y exige la autorización de tratamiento de datos personales.
+- **Superusuario de verificación:** el docente elige "Ver como" juez, secretaría, magistrado, demandante, demandado o perito y usa la plataforma con los permisos exactos de ese perfil. El servidor los valida, y cada actuación queda marcada como verificación docente.
+- **Escritos pendientes de decisión:** la demanda, la contestación y los demás escritos de las partes llegan a la bandeja del despacho con sus archivos. El juez admite, inadmite o rechaza la demanda desde allí, con plantillas de auto que citan la norma aplicable. La parte ve su escrito como "En análisis del despacho".
 - **Docente administrador:** la cuenta registrada con el correo definido en la configuración recibe el rol de docente. Desde Administración asigna los roles de juez, secretaría, magistrado, partes, perito u observador.
 - **Radicación con numeración automática:** el escrito inicial asigna el radicado consecutivo y cada actuación recibe su número dentro del proceso. El servidor valida que cada rol radique solo lo que le corresponde.
 - **Documentos privados:** se cargan archivos PDF, de imagen o de texto de hasta 20 MB, con huella SHA-256. Solo los consultan los participantes con rol asignado.
@@ -36,6 +38,7 @@ Antes de publicar el sitio, solicite el visto bueno de la dependencia encargada 
    - `supabase/03_ejemplo.sql` (opcional): crea el proceso de ejemplo CUMBRE ANDINA.
    - `supabase/04_preasignaciones.sql`: permite al docente preasignar roles por correo institucional antes de que el estudiante se registre.
    - `supabase/05_audiencias.sql`: agrega el enlace de Google Meet a las audiencias, visible solo para participantes registrados.
+   - `supabase/06_superusuario.sql`: permite al docente verificar cualquier perfil con "Ver como", con los permisos de ese rol validados por el servidor.
 3. En **Authentication > Sign In / Providers > Email**, mantenga activa la opción *Confirm email*.
 4. En **Authentication > URL Configuration**:
    - en *Site URL*, escriba la dirección pública del sitio (paso 3);

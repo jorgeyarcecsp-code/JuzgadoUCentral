@@ -18,7 +18,7 @@
     session: null, perfil: null, ajustes: {}, procesos: new Map(), acts: [], docs: [], perfiles: [],
     view: 'consulta', proc: null, ptab: 'actuaciones', qmode: 'radicado', q: {}, estDate: ymd(new Date()),
     cargando: true, error: null, recuperacion: false, radProc: null, ultimaFirma: '', ultima: null,
-    calMes: ymd(new Date()).slice(0, 7), calSel: null, calNueva: null
+    calMes: ymd(new Date()).slice(0, 7), calSel: null, calNueva: null, comoRol: null, decidir: null
   };
 
   /* ---------- Utilidades ---------- */
@@ -34,7 +34,10 @@
   const despachoN = p => p.instancia >= 2 ? (S.ajustes.despacho2 || 'Sala Civil simulada, segunda instancia') : (S.ajustes.despacho1 || 'Despacho simulado de propiedad industrial, primera instancia');
   const nombreRol = r => ROLES[r] || r || '';
   function aviso(m) { const t = $('mensaje'); t.textContent = m; t.classList.remove('oculto'); clearTimeout(aviso.h); aviso.h = setTimeout(() => t.classList.add('oculto'), 5000); }
-  function rol() { return S.perfil && S.perfil.rol ? S.perfil.rol : null; }
+  function rolReal() { return S.perfil && S.perfil.rol ? S.perfil.rol : null; }
+  function rol() { return rolReal() === 'docente' && S.comoRol ? S.comoRol : rolReal(); }
+  const simulando = () => rolReal() === 'docente' && !!S.comoRol;
+  const conComo = obj => simulando() ? Object.assign({}, obj, { como_rol: S.comoRol }) : obj;
   const puedeRadicar = () => !!rol() && rol() !== 'observador';
   const esDocente = () => rol() === 'docente';
   const esDespacho = () => DESPACHO.includes(rol());
@@ -101,7 +104,7 @@
   }
   function ir(h) { if (location.hash === '#' + h) render(); else location.hash = h; }
   window.addEventListener('hashchange', async () => {
-    leerRuta(); if (S.view === 'proceso') await cargarDocs(S.proc); if (S.view === 'admin') await cargarPerfiles();
+    leerRuta(); if (S.view === 'proceso') await cargarDocs(S.proc); if (S.view === 'bandeja') await cargarDocsTodos(); if (S.view === 'admin') await cargarPerfiles();
     render(); window.scrollTo(0, 0);
   });
 
@@ -113,7 +116,7 @@
     $('menu').innerHTML = items.map(([k, n]) => '<a href="#' + k + '"' + (k === actual ? ' aria-current="page"' : '') + '>' + n + '</a>').join('');
     let c = '';
     if (!sb) c = '<span class="marca alerta">Sitio sin configurar</span>';
-    else if (S.session) c = '<span>' + esc(S.perfil ? S.perfil.nombre : S.session.user.email) + '</span>' + (rol() ? '<span class="marca activa">' + esc(nombreRol(rol())) + '</span>' : '<span class="marca alerta">Rol pendiente de asignación</span>') + '<button class="boton peq" data-a="salir">Cerrar sesión</button>';
+    else if (S.session) c = '<span>' + esc(S.perfil ? S.perfil.nombre : S.session.user.email) + '</span>' + (rolReal() === 'docente' ? '<label class="peq" for="sel-como" style="display:flex;gap:6px;align-items:center">Ver como<select id="sel-como" style="width:auto;padding:4px 8px">' + [['', 'Docente (superusuario)'], ['juez', ROLES.juez], ['secretaria', ROLES.secretaria], ['magistrado', ROLES.magistrado], ['demandante', ROLES.demandante], ['demandado', ROLES.demandado], ['perito', ROLES.perito]].map(([k, n]) => '<option value="' + k + '"' + ((S.comoRol || '') === k ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select></label>' : (rol() ? '<span class="marca activa">' + esc(nombreRol(rol())) + '</span>' : '<span class="marca alerta">Rol pendiente de asignación</span>')) + '<button class="boton peq" data-a="salir">Cerrar sesión</button>';
     else c = '<a class="boton peq" href="#ingresar">Ingresar</a><a class="boton peq principal" href="#registro">Crear usuario</a>';
     $('cuenta').innerHTML = c;
   }
@@ -129,6 +132,7 @@
     }
     if (S.recuperacion) { M.innerHTML = vNuevaClave(); return; }
     let h = S.error ? '<div class="nota error">' + esc(S.error) + '</div>' : '';
+    if (simulando()) h += '<div class="nota alerta"><b>Modo de verificación.</b> Está viendo la plataforma y actuando como <b>' + esc(nombreRol(S.comoRol)) + '</b>, con los permisos exactos de ese perfil. Las actuaciones que radique quedan marcadas como realizadas por el docente. <button class="boton peq" data-a="salir-como">Volver a docente</button></div>';
     if (['consulta', 'proceso', 'estados', 'bandeja', 'agenda', 'radicar'].includes(S.view)) h += cifras();
     const V = { consulta: vConsulta, proceso: vProceso, radicar: vRadicar, estados: vEstados, bandeja: vBandeja, agenda: vAgenda, guia: vGuia, privacidad: vPrivacidad, ingresar: vIngresar, registro: vRegistro, recuperar: vRecuperar, admin: vAdmin };
     h += (V[S.view] || vConsulta)();
@@ -138,7 +142,7 @@
   }
 
   /* ---------- Cifras de resumen ---------- */
-  function visible(a) { return !a.reservada || esDespacho() || (S.session && a.autor_id === S.session.user.id) || (rol() && a.rol === rol()); }
+  function visible(a) { return !a.reservada || esDespacho() || (!simulando() && S.session && a.autor_id === S.session.user.id) || (rol() && a.rol === rol()); }
   function cifras() {
     const ps = [...S.procesos.values()]; const vis = S.acts.filter(a => !a.anulada && visible(a));
     const act = ps.filter(p => p.estado !== 'Terminado').length;
@@ -183,7 +187,7 @@
     const ei = EIDX[p.etapa] ?? 0;
     const pest = [['datos', 'Datos del proceso'], ['sujetos', 'Sujetos procesales'], ['actuaciones', 'Actuaciones'], ['documentos', 'Índice del expediente'], ['audiencias', 'Audiencias']];
     const cuerpo = { datos: pDatos, sujetos: pSujetos, actuaciones: pActuaciones, documentos: pDocumentos, audiencias: pAudiencias }[S.ptab](p);
-    return '<section class="panel"><div class="panel-cab"><div><a href="#consulta">Volver a la consulta</a><h2 style="margin-top:8px">Proceso <span class="mono">' + fmtRad(radInst(p)) + '</span></h2><p class="peq suave" style="margin:4px 0 0">' + esc(despachoN(p)) + '. ' + esc(p.clase) + '.</p></div><div class="acciones">' + (puedeRadicar() ? '<button class="boton principal" data-a="radicar-en" data-r="' + p.radicado + '">Registrar actuación</button>' : '') + (esDespacho() ? '<label for="sel-etapa" class="peq">Etapa<select id="sel-etapa" data-r="' + p.radicado + '">' + ETAPAS.map(e => '<option value="' + e.k + '"' + (e.k === p.etapa ? ' selected' : '') + '>' + esc(e.n) + '</option>').join('') + '</select></label>' : '') + '</div></div><div class="etapas" aria-label="Etapas del proceso">' + ETAPAS.map((e, i) => '<div class="etapa ' + (p.estado === 'Terminado' || i < ei ? 'hecha' : i === ei ? 'actual' : '') + '">' + esc(e.n) + '</div>').join('') + '</div></section><section class="panel"><div class="selector" role="tablist">' + pest.map(([k, n]) => '<button role="tab" data-a="pest" data-t="' + k + '" aria-pressed="' + (S.ptab === k) + '">' + n + '</button>').join('') + '</div>' + cuerpo + '</section>';
+    return '<section class="panel"><div class="panel-cab"><div><a href="#consulta">Volver a la consulta</a><h2 style="margin-top:8px">Proceso <span class="mono">' + fmtRad(radInst(p)) + '</span></h2><p class="peq suave" style="margin:4px 0 0">' + esc(despachoN(p)) + '. ' + esc(p.clase) + '.</p></div><div class="acciones">' + (esDespacho() && pendientes().some(x => x.p.radicado === p.radicado) ? '<a class="boton principal" href="#bandeja">Decidir escritos pendientes (' + pendientes().filter(x => x.p.radicado === p.radicado).length + ')</a>' : '') + (puedeRadicar() ? '<button class="boton' + (esDespacho() && pendientes().some(x => x.p.radicado === p.radicado) ? '' : ' principal') + '" data-a="radicar-en" data-r="' + p.radicado + '">Registrar actuación</button>' : '') + (esDespacho() ? '<label for="sel-etapa" class="peq">Etapa<select id="sel-etapa" data-r="' + p.radicado + '">' + ETAPAS.map(e => '<option value="' + e.k + '"' + (e.k === p.etapa ? ' selected' : '') + '>' + esc(e.n) + '</option>').join('') + '</select></label>' : '') + '</div></div><div class="etapas" aria-label="Etapas del proceso">' + ETAPAS.map((e, i) => '<div class="etapa ' + (p.estado === 'Terminado' || i < ei ? 'hecha' : i === ei ? 'actual' : '') + '">' + esc(e.n) + '</div>').join('') + '</div></section><section class="panel"><div class="selector" role="tablist">' + pest.map(([k, n]) => '<button role="tab" data-a="pest" data-t="' + k + '" aria-pressed="' + (S.ptab === k) + '">' + n + '</button>').join('') + '</div>' + cuerpo + '</section>';
   }
   function pDatos(p) {
     const m = p.marca || {};
@@ -202,7 +206,8 @@
   function pActuaciones(p) {
     const as = actsDe(p.radicado).sort((a, b) => b.numero - a.numero);
     const anular = ['juez', 'magistrado', 'docente'].includes(rol());
-    const filas = as.filter(visible).map(a => { const t = TMAP[a.tipo] || {}; return '<tr class="' + (a.anulada ? 'anulada' : '') + '"><td class="num">' + pad(a.numero, 4) + '</td><td class="num">' + esc(a.fecha) + '</td><td>' + esc(a.nombre) + (a.reservada ? ' <span class="marca reservada">Reservada</span>' : '') + (a.fecha_estado ? ' <span class="marca">Estado del ' + esc(a.fecha_estado) + '</span>' : '') + '<br><span class="peq suave">' + esc(t.norma || '') + '</span></td><td>' + esc(a.anotacion) + (a.anulada ? '<br><span class="peq">Anulada: ' + esc(a.motivo_anulacion || '') + '</span>' : '') + (a.audiencia ? '<br><span class="peq">' + esc(a.audiencia.tipo + ': ' + fechaLarga(a.audiencia.fecha) + ', ' + a.audiencia.hora) + '</span>' : '') + '</td><td class="num">' + esc(a.inicio_termino || '') + '</td><td class="num">' + esc(a.fin_termino || '') + '</td><td class="num">' + esc(fechaHora(a.registrado)) + '</td><td>' + celdaDocs(a) + '</td><td class="peq">' + esc(nombreRol(a.rol)) + (a.firmante ? '<br><span class="suave">' + esc(a.firmante) + '</span>' : '') + '</td><td>' + (anular && !a.anulada ? '<button class="boton peq" data-a="anular" data-c="' + a.codigo + '">Anular</button> ' : '') + (a.reservada && esDespacho() ? '<button class="boton peq" data-a="levantar" data-c="' + a.codigo + '">Levantar reserva</button>' : '') + '</td></tr>'; }).join('');
+    const enEspera = new Set(pendientes().map(x => x.a.codigo));
+    const filas = as.filter(visible).map(a => { const t = TMAP[a.tipo] || {}; return '<tr class="' + (a.anulada ? 'anulada' : '') + '"><td class="num">' + pad(a.numero, 4) + '</td><td class="num">' + esc(a.fecha) + '</td><td>' + esc(a.nombre) + (a.reservada ? ' <span class="marca reservada">Reservada</span>' : '') + (enEspera.has(a.codigo) ? ' <span class="marca alerta">Pendiente de decisión</span>' : '') + (a.fecha_estado ? ' <span class="marca">Estado del ' + esc(a.fecha_estado) + '</span>' : '') + '<br><span class="peq suave">' + esc(t.norma || '') + '</span></td><td>' + esc(a.anotacion) + (a.anulada ? '<br><span class="peq">Anulada: ' + esc(a.motivo_anulacion || '') + '</span>' : '') + (a.audiencia ? '<br><span class="peq">' + esc(a.audiencia.tipo + ': ' + fechaLarga(a.audiencia.fecha) + ', ' + a.audiencia.hora) + '</span>' : '') + '</td><td class="num">' + esc(a.inicio_termino || '') + '</td><td class="num">' + esc(a.fin_termino || '') + '</td><td class="num">' + esc(fechaHora(a.registrado)) + '</td><td>' + celdaDocs(a) + '</td><td class="peq">' + esc(nombreRol(a.rol)) + (a.actuado_por === 'docente' ? '<br><span class="marca alerta">Verificación docente</span>' : '') + (a.firmante ? '<br><span class="suave">' + esc(a.firmante) + '</span>' : '') + '</td><td>' + (anular && !a.anulada ? '<button class="boton peq" data-a="anular" data-c="' + a.codigo + '">Anular</button> ' : '') + (a.reservada && esDespacho() ? '<button class="boton peq" data-a="levantar" data-c="' + a.codigo + '">Levantar reserva</button>' : '') + '</td></tr>'; }).join('');
     return '<div class="acciones" style="margin-bottom:12px"><button class="boton peq" data-a="copiar-acts" data-r="' + p.radicado + '">Copiar listado de actuaciones</button></div><div class="tabla"><table><thead><tr><th>N.º</th><th>Fecha de actuación</th><th>Actuación</th><th>Anotación</th><th>Inicia término</th><th>Finaliza término</th><th>Fecha de registro</th><th>Documentos</th><th>Radicó</th><th><span class="oculto">Acciones</span></th></tr></thead><tbody>' + (filas || '<tr><td colspan="10" class="vacio">Sin actuaciones visibles.</td></tr>') + '</tbody></table></div>';
   }
   function pDocumentos(p) {
@@ -291,7 +296,7 @@
     $('ap-enviar').disabled = true; msg.textContent = 'Registrando el auto…';
     const a = { tipo: k, fecha: hoy(), anotacion: v('ap-anot'), firmante: v('ap-firma'), fecha_estado: siguienteHabil(hoy(), vac()), reservada: false, destinatarios: ['demandante', 'demandado', 'perito', 'secretaria'], enlaces: [], audiencia: { tipo: t.aud, fecha: f, hora: h, duracion: dur, lugar: v('ap-sala') }, enlace_reunion: enl || null };
     S.ultimaFirma = v('ap-firma');
-    const r = await sb.rpc('radicar_actuacion', { p_radicado: rad, a });
+    const r = await sb.rpc('radicar_actuacion', { p_radicado: rad, a: conComo(a) });
     if (r.error) { msg.innerHTML = '<span style="color:var(--rojo)">' + esc(traducirError(r.error)) + '</span>'; $('ap-enviar').disabled = false; return; }
     await cargarTodo(); S.calSel = r.data.codigo; S.calMes = f.slice(0, 7); S.calNueva = null; S.ultima = Object.assign({}, r.data, { anexos: [] });
     render(); mostrarConstancia(S.ultima, false, []); aviso('Audiencia programada');
@@ -374,11 +379,11 @@
       S.ultimaFirma = v('f-firma');
       let res;
       if (nuevo) {
-        res = await sb.rpc('radicar_inicial', { p: Object.assign({}, a, {
+        res = await sb.rpc('radicar_inicial', { p: Object.assign(conComo({}), a, {
           sujetos: [{ tipo: 'Demandante', nombre: v('n-dte'), id: v('n-dte-id'), apoderado: v('n-dte-ap') }, { tipo: 'Demandado', nombre: v('n-ddo'), id: v('n-ddo-id'), apoderado: v('n-ddo-ap') }],
           marca: { signo: v('n-signo'), tipo: v('n-mtipo'), registro: v('n-reg'), clases: v('n-clases'), cuestionado: v('n-cuest'), productos: v('n-prod'), conocimiento: v('n-conoc') },
           cuantia: v('n-cuantia') }) });
-      } else res = await sb.rpc('radicar_actuacion', { p_radicado: proc, a });
+      } else res = await sb.rpc('radicar_actuacion', { p_radicado: proc, a: conComo(a) });
       if (res.error) throw res.error;
       const act = res.data;
       const errores = []; const anexos = [];
@@ -414,13 +419,111 @@
     const tabla = (lista, col) => lista.length ? '<div class="tabla"><table><thead><tr><th>Proceso</th><th>Demandante</th><th>Demandado</th><th>Actuación</th><th>' + col + '</th></tr></thead><tbody>' + lista.map(a => { const p = S.procesos.get(a.radicado) || { sujetos: [] }; const s = t => ((p.sujetos || []).find(x => x.tipo === t) || {}).nombre || ''; return '<tr><td class="num"><a href="#p-' + a.radicado + '">' + fmtRad(p.radicado ? radInst(p) : a.radicado) + '</a></td><td>' + esc(s('Demandante')) + '</td><td>' + esc(s('Demandado')) + '</td><td>' + esc(a.nombre) + '<br><span class="peq">' + esc(a.anotacion) + '</span></td><td class="num">' + (col === 'Fecha de la providencia' ? esc(a.fecha) : esc(a.inicio_termino + ' a ' + a.fin_termino)) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="vacio">Sin registros para esta fecha.</div>';
     return '<section class="panel"><div class="panel-cab"><h2>Estado electrónico del ' + esc(fechaLarga(d)) + '</h2><label for="est-fecha" class="peq">Fecha<input type="date" id="est-fecha" value="' + esc(d) + '"></label></div><p class="peq suave">Las providencias se insertan en el estado al día siguiente de su fecha (Código General del Proceso, art. 295; Ley 2213 de 2022, art. 9).</p>' + tabla(est, 'Fecha de la providencia') + '</section><section class="panel"><h2 style="margin-bottom:14px">Traslados en curso en esa fecha</h2>' + tabla(tras, 'Término') + '</section>';
   }
+  /* ---------- Pendientes del despacho ---------- */
+  const ROLES_PARTE = ['demandante', 'demandado', 'perito'];
+  const ROLES_DESP = ['juez', 'secretaria', 'magistrado', 'docente'];
+  const GRUPO_DECISION = { demanda: 'inicial', subsanacion: 'inicial', reforma: 'inicial', mc_previas: 'cautelar', mc_solicitud: 'cautelar', contestacion: 'contestacion', excep_previas: 'previas', objecion_jur: 'contestacion', pronunc_merito: 'tramite', reposicion: 'reposicion', apel_auto: 'apelacion', reparos: 'apelacion', sustentacion: 'sustentacion', nulidad: 'tramite', desistimiento: 'terminacion', conciliacion: 'terminacion' };
+  const DECISIONES = {
+    inicial: ['auto_admite', 'auto_inadmite', 'auto_rechaza'], cautelar: ['auto_mc', 'auto_niega_mc'],
+    contestacion: ['traslado', 'auto_fija_inicial', 'auto_tramite'], previas: ['traslado', 'auto_previas'],
+    reposicion: ['auto_reposicion'], apelacion: ['auto_concede_apel', 'auto_niega_apel'], sustentacion: ['traslado_sust', 'sentencia2'],
+    terminacion: ['auto_termina', 'auto_tramite'], tramite: ['auto_tramite', 'auto_requiere']
+  };
+  function pendientes() {
+    const out = [];
+    for (const p of S.procesos.values()) {
+      if (p.estado === 'Terminado') continue;
+      const as = actsDe(p.radicado).filter(a => !a.anulada);
+      const ult = as.filter(a => ROLES_DESP.includes(a.rol)).reduce((m, a) => Math.max(m, a.numero), 0);
+      as.filter(a => ROLES_PARTE.includes(a.rol) && a.numero > ult && visible(a)).forEach(a => out.push({ p, a }));
+    }
+    return out.sort((x, y) => (x.a.registrado || '').localeCompare(y.a.registrado || ''));
+  }
+  function opcionesDecision(a) {
+    const grupo = GRUPO_DECISION[a.tipo] || 'tramite'; const permitidos = new Set(tiposPara(rol()).map(t => t.k));
+    return DECISIONES[grupo].filter(k => permitidos.has(k));
+  }
+  const nombreParte = (p, tipo) => (((p.sujetos || []).find(s => s.tipo === tipo)) || {}).nombre || '';
+  function plantilla(k, p, a) {
+    const dte = nombreParte(p, 'Demandante'), ddo = nombreParte(p, 'Demandado');
+    const T = {
+      auto_admite: 'Por reunir los requisitos de los artículos 82, 84 y 368 del Código General del Proceso, admite la demanda verbal por infracción de derechos de propiedad industrial promovida por ' + dte + ' contra ' + ddo + '. Ordena notificar personalmente a la parte demandada (CGP, arts. 291 y 292; Ley 2213 de 2022, art. 8) y correrle traslado por el término de veinte (20) días (CGP, art. 369). Reconoce personería al apoderado de la parte demandante.',
+      auto_inadmite: 'Inadmite la demanda promovida por ' + dte + ' contra ' + ddo + ' por los siguientes defectos: [señale con precisión cada defecto]. Concede a la parte demandante el término de cinco (5) días para subsanarla, so pena de rechazo (CGP, art. 90).',
+      auto_rechaza: 'Rechaza la demanda promovida por ' + dte + ' contra ' + ddo + ' por [indique la causal: falta de jurisdicción o de competencia, caducidad o falta de subsanación oportuna] (CGP, art. 90).',
+      traslado: a.tipo === 'excep_previas' ? 'De las excepciones previas propuestas por la parte demandada se corre traslado a la parte demandante por el término de tres (3) días (CGP, arts. 101 y 110).' : 'De las excepciones de mérito propuestas por la parte demandada en la contestación se corre traslado a la parte demandante por el término de cinco (5) días (CGP, arts. 110 y 370).',
+      auto_previas: 'Resuelve las excepciones previas propuestas por la parte demandada: [declara probada o no probada cada excepción y sus consecuencias] (CGP, art. 101).',
+      auto_tramite: 'Agrega al expediente el escrito presentado por la ' + (a.rol === 'demandado' ? 'parte demandada' : a.rol === 'demandante' ? 'parte demandante' : 'perito') + ' (actuación ' + pad(a.numero, 4) + ') y dispone: [indique la decisión].',
+      auto_requiere: 'Requiere a la ' + (a.rol === 'demandado' ? 'parte demandada' : 'parte demandante') + ' para que, en el término de [número] días, [indique la carga procesal].',
+      auto_mc: 'Decreta las siguientes medidas cautelares: [describa cada medida] (Decisión 486 de 2000, arts. 245 a 247). Fija caución por [monto].',
+      auto_niega_mc: 'Niega las medidas cautelares solicitadas porque [indique el requisito no acreditado] (Decisión 486 de 2000, art. 247).',
+      auto_reposicion: 'Resuelve el recurso de reposición interpuesto contra [providencia]: [repone o no repone] (CGP, art. 318).',
+      auto_concede_apel: 'Concede en el efecto [devolutivo, suspensivo o diferido] el recurso de apelación interpuesto contra [providencia] (CGP, arts. 322 y 323). Ordena remitir el expediente al superior.',
+      auto_niega_apel: 'Niega por improcedente el recurso de apelación interpuesto contra [providencia] (CGP, arts. 321 y 322).',
+      traslado_sust: 'De la sustentación del recurso de apelación se corre traslado a la parte no recurrente por el término de cinco (5) días (Ley 2213 de 2022, art. 12).',
+      auto_termina: 'Declara terminado el proceso por [desistimiento, transacción o conciliación] y ordena su archivo (CGP, arts. 312 y 314).'
+    };
+    return T[k] || '';
+  }
+  function vPendientesDespacho() {
+    const lista = pendientes();
+    const dec = S.decidir ? lista.find(x => x.a.codigo === S.decidir.codigo) : null;
+    const filas = lista.map(({ p, a }) => {
+      const ops = opcionesDecision(a);
+      return '<tr' + (dec && dec.a.codigo === a.codigo ? ' style="background:var(--fondo)"' : '') + '><td class="num"><a href="#p-' + p.radicado + '">' + fmtRad(radInst(p)) + '</a></td><td>' + esc(a.nombre) + '<br><span class="peq suave">' + esc(nombreRol(a.rol)) + ', ' + esc(fechaHora(a.registrado)) + '</span></td><td class="peq">' + esc(a.anotacion) + '</td><td>' + celdaDocs(a) + '</td><td><div class="acciones">' + (ops.length ? ops.map(k => '<button class="boton peq' + (k === 'auto_admite' ? ' principal' : '') + '" data-a="decidir" data-c="' + a.codigo + '" data-k="' + k + '">' + esc(ETIQUETA_DECISION[k] || TMAP[k].n) + '</button>').join('') : '<span class="peq suave">Corresponde a otro funcionario del despacho</span>') + '</div></td></tr>';
+    }).join('');
+    return '<section class="panel" id="pendientes"><div class="panel-cab"><h2>Escritos pendientes de decisión</h2><span class="peq suave">' + lista.length + ' escrito' + (lista.length === 1 ? '' : 's') + ' radicado' + (lista.length === 1 ? '' : 's') + ' por las partes después de la última actuación del despacho</span></div>' + (filas ? '<div class="tabla"><table><thead><tr><th>Proceso</th><th>Escrito</th><th>Contenido</th><th>Documentos</th><th>Decisión</th></tr></thead><tbody>' + filas + '</tbody></table></div>' : '<div class="vacio">No hay escritos pendientes. Cuando una parte radique una demanda, una contestación u otro escrito, aparecerá aquí para su análisis.</div>') + '</section>' + (dec ? formDecision(dec.p, dec.a, S.decidir.k) : '');
+  }
+  const ETIQUETA_DECISION = { auto_admite: 'Admitir', auto_inadmite: 'Inadmitir', auto_rechaza: 'Rechazar', traslado: 'Correr traslado', auto_fija_inicial: 'Fijar audiencia inicial', auto_tramite: 'Auto de trámite', auto_requiere: 'Requerir', auto_previas: 'Resolver excepciones previas', auto_mc: 'Decretar medidas', auto_niega_mc: 'Negar medidas', auto_reposicion: 'Resolver reposición', auto_concede_apel: 'Conceder apelación', auto_niega_apel: 'Negar apelación', traslado_sust: 'Correr traslado', sentencia2: 'Proferir sentencia', auto_termina: 'Terminar proceso' };
+  function formDecision(p, a, k) {
+    const t = TMAP[k]; const est = !!t.est; const base = est ? siguienteHabil(hoy(), vac()) : hoy();
+    const tr = t.d ? termino(base, t.d, t.off || 0, vac()) : null;
+    return '<form class="panel" id="f-decidir" data-c="' + a.codigo + '" data-k="' + k + '" data-r="' + p.radicado + '" novalidate><div class="panel-cab"><h2>' + esc(t.n) + '</h2><button class="boton peq" type="button" data-a="decidir-cerrar">Cancelar</button></div>' +
+      '<div class="ficha"><div>Proceso</div><div>' + fmtRad(radInst(p)) + '<br><span class="peq">' + esc(nombreParte(p, 'Demandante')) + ' contra ' + esc(nombreParte(p, 'Demandado')) + '</span></div><div>Escrito analizado</div><div>Actuación ' + pad(a.numero, 4) + ': ' + esc(a.nombre) + ' (' + esc(nombreRol(a.rol)) + ', ' + esc(a.fecha) + ')<br><span class="peq">' + esc(a.anotacion) + '</span></div><div>Documentos del escrito</div><div>' + celdaDocs(a) + '</div><div>Fundamento</div><div>' + esc(t.norma) + '</div>' + (tr ? '<div>' + esc(t.tl || 'Término') + '</div><div>' + t.d + ' días hábiles, del ' + esc(fechaLarga(tr.inicio)) + ' al ' + esc(fechaLarga(tr.fin)) + '</div>' : '') + (est ? '<div>Notificación</div><div>Estado electrónico del ' + esc(fechaLarga(base)) + '</div>' : '') + '</div>' +
+      '<label for="d-texto" style="margin-top:16px"><span class="ob">Texto de la providencia</span><textarea id="d-texto" style="min-height:150px">' + esc(plantilla(k, p, a)) + '</textarea></label><p class="peq suave" style="margin:4px 0 0">Complete los apartes entre corchetes antes de firmar.</p>' +
+      '<div class="rejilla r2" style="margin-top:14px"><label for="d-firma"><span class="ob">Firmante</span><input type="text" id="d-firma" value="' + esc(S.ultimaFirma || (S.perfil ? S.perfil.nombre : '')) + '"></label><label for="d-arch">Providencia en PDF (opcional)<input type="file" id="d-arch" accept=".pdf,application/pdf"></label></div>' +
+      '<div class="acciones" style="margin-top:14px"><button class="boton principal" type="submit" id="d-enviar">Firmar y ' + (est ? 'fijar en estado' : 'registrar') + '</button><span class="peq" id="d-msg"></span></div></form>';
+  }
+  async function subirAnexos(act, archivos, st) {
+    const errores = [], anexos = [];
+    for (const f of archivos) {
+      if (st) st.textContent = 'Cargando ' + f.name + '…';
+      const ruta = act.radicado + '/' + act.codigo + '/' + Date.now() + '-' + nombreSeguro(f.name);
+      const huella = await sha256(f);
+      const up = await sb.storage.from('expedientes').upload(ruta, f, { contentType: f.type, upsert: false });
+      if (up.error) { errores.push(f.name + ': ' + traducirError(up.error)); continue; }
+      const ins = await sb.from('documentos').insert({ codigo: act.codigo, radicado: act.radicado, nombre: f.name, ruta, tamano: f.size, tipo: f.type, sha256: huella });
+      if (ins.error) errores.push(f.name + ': ' + traducirError(ins.error)); else anexos.push({ nombre: f.name, sha256: huella });
+    }
+    return { errores, anexos };
+  }
+  async function enviarDecision(f) {
+    const k = f.dataset.k, t = TMAP[k], rad = f.dataset.r; const msg = $('d-msg'); const texto = $('d-texto').value.trim(), firma = $('d-firma').value.trim();
+    const falta = []; if (!texto) falta.push('texto de la providencia'); if (!firma) falta.push('firmante'); if (/\[[^\]]*\]/.test(texto)) falta.push('completar los apartes entre corchetes');
+    const arch = [...($('d-arch').files || [])]; arch.forEach(x => { if (x.type !== 'application/pdf') falta.push('“' + x.name + '” debe ser PDF'); else if (x.size > 20971520) falta.push('“' + x.name + '” supera 20 MB'); });
+    if (falta.length) { msg.innerHTML = '<span style="color:var(--rojo)">Revise: ' + esc(falta.join('; ')) + '.</span>'; return; }
+    $('d-enviar').disabled = true; msg.textContent = 'Registrando la providencia…';
+    const fecha = hoy(); const fechaEstado = t.est ? siguienteHabil(fecha, vac()) : null; const tr = t.d ? termino(fechaEstado || fecha, t.d, t.off || 0, vac()) : null;
+    const a = { tipo: k, fecha, anotacion: texto, firmante: firma, termino_dias: t.d || null, termino_label: t.d ? (t.tl || 'Término') : null, inicio_termino: tr ? tr.inicio : null, fin_termino: tr ? tr.fin : null, fecha_estado: fechaEstado, reservada: !!t.res, destinatarios: k === 'traslado' || k === 'traslado_sust' ? ['demandante', 'demandado', 'secretaria'] : ['demandante', 'demandado'], enlaces: [], audiencia: null };
+    S.ultimaFirma = firma;
+    const r = await sb.rpc('radicar_actuacion', { p_radicado: rad, a: conComo(a) });
+    if (r.error) { msg.innerHTML = '<span style="color:var(--rojo)">' + esc(traducirError(r.error)) + '</span>'; $('d-enviar').disabled = false; return; }
+    const { errores, anexos } = await subirAnexos(r.data, arch, msg);
+    S.decidir = null; await cargarTodo(); await cargarDocsTodos();
+    S.ultima = Object.assign({}, r.data, { anexos }); render(); mostrarConstancia(S.ultima, false, errores); aviso(t.n + ' registrado');
+  }
+  async function cargarDocsTodos() { S.docs = []; if (!rol()) return; const { data } = await sb.from('documentos').select('*').order('creado'); S.docs = data || []; }
+  function vMisEscritos() {
+    const r = rol(); const mios = pendientes().filter(x => x.a.rol === r);
+    if (!mios.length) return '';
+    return '<section class="panel"><div class="panel-cab"><h2>Mis escritos en análisis del despacho</h2></div><div class="tabla"><table><thead><tr><th>Proceso</th><th>Escrito</th><th>Radicado el</th><th>Documentos</th><th>Estado</th></tr></thead><tbody>' + mios.map(({ p, a }) => '<tr><td class="num"><a href="#p-' + p.radicado + '">' + fmtRad(radInst(p)) + '</a></td><td>' + esc(a.nombre) + '</td><td class="num">' + esc(fechaHora(a.registrado)) + '</td><td>' + celdaDocs(a) + '</td><td><span class="marca alerta">En análisis del despacho</span></td></tr>').join('') + '</tbody></table></div></section>';
+  }
   function vBandeja() {
     const r = rol(); const vis = S.acts.filter(a => !a.anulada && visible(a));
     const mias = r === 'docente' ? vis : vis.filter(a => (a.destinatarios || []).includes(r));
     const terms = mias.filter(a => a.fin_termino && habilesHasta(a.fin_termino, hoy(), vac()) >= 0).sort((a, b) => a.fin_termino.localeCompare(b.fin_termino));
     const coms = mias.slice().sort((a, b) => (b.registrado || '').localeCompare(a.registrado || '')).slice(0, 50);
     const sev = n => n <= 1 ? 'critica' : n <= 3 ? 'alerta' : '';
-    return '<section class="panel"><div class="panel-cab"><h2>Términos en curso</h2><span class="peq suave">' + (r === 'docente' ? 'Todos los procesos' : 'Dirigidos a: ' + esc(nombreRol(r))) + '</span></div>' + (terms.length ? '<div class="tabla"><table><thead><tr><th>Días hábiles restantes</th><th>Término</th><th>Proceso</th><th>Actuación que lo origina</th><th>Inicia</th><th>Vence</th></tr></thead><tbody>' + terms.map(a => { const n = habilesHasta(a.fin_termino, hoy(), vac()); return '<tr><td class="num"><span class="punto ' + sev(n) + '"></span>' + n + '</td><td>' + esc(a.termino_label || 'Término') + '</td><td class="num"><a href="#p-' + a.radicado + '">' + fmtRad(a.radicado) + '</a></td><td>' + esc(a.nombre) + '</td><td class="num">' + esc(a.inicio_termino) + '</td><td class="num">' + esc(a.fin_termino) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="vacio">No hay términos en curso.</div>') + '</section><section class="panel"><h2 style="margin-bottom:14px">Comunicaciones recibidas</h2>' + (coms.length ? '<div class="tabla"><table><thead><tr><th>Registrada</th><th>Proceso</th><th>Actuación</th><th>Remite</th></tr></thead><tbody>' + coms.map(a => '<tr><td class="num">' + esc(fechaHora(a.registrado)) + '</td><td class="num"><a href="#p-' + a.radicado + '">' + fmtRad(a.radicado) + '</a></td><td>' + esc(a.nombre) + '<br><span class="peq">' + esc(a.anotacion) + '</span></td><td class="peq">' + esc(nombreRol(a.rol)) + '</td></tr>').join('') + '</tbody></table></div>' : '<div class="vacio">Sin comunicaciones.</div>') + '</section>';
+    return (esDespacho() ? vPendientesDespacho() : vMisEscritos()) + '<section class="panel"><div class="panel-cab"><h2>Términos en curso</h2><span class="peq suave">' + (r === 'docente' ? 'Todos los procesos' : 'Dirigidos a: ' + esc(nombreRol(r))) + '</span></div>' + (terms.length ? '<div class="tabla"><table><thead><tr><th>Días hábiles restantes</th><th>Término</th><th>Proceso</th><th>Actuación que lo origina</th><th>Inicia</th><th>Vence</th></tr></thead><tbody>' + terms.map(a => { const n = habilesHasta(a.fin_termino, hoy(), vac()); return '<tr><td class="num"><span class="punto ' + sev(n) + '"></span>' + n + '</td><td>' + esc(a.termino_label || 'Término') + '</td><td class="num"><a href="#p-' + a.radicado + '">' + fmtRad(a.radicado) + '</a></td><td>' + esc(a.nombre) + '</td><td class="num">' + esc(a.inicio_termino) + '</td><td class="num">' + esc(a.fin_termino) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="vacio">No hay términos en curso.</div>') + '</section><section class="panel"><h2 style="margin-bottom:14px">Comunicaciones recibidas</h2>' + (coms.length ? '<div class="tabla"><table><thead><tr><th>Registrada</th><th>Proceso</th><th>Actuación</th><th>Remite</th></tr></thead><tbody>' + coms.map(a => '<tr><td class="num">' + esc(fechaHora(a.registrado)) + '</td><td class="num"><a href="#p-' + a.radicado + '">' + fmtRad(a.radicado) + '</a></td><td>' + esc(a.nombre) + '<br><span class="peq">' + esc(a.anotacion) + '</span></td><td class="peq">' + esc(nombreRol(a.rol)) + '</td></tr>').join('') + '</tbody></table></div>' : '<div class="vacio">Sin comunicaciones.</div>') + '</section>';
   }
   function vAgenda() {
     const l = listaAudiencias();
@@ -502,6 +605,13 @@
       $('dialogo').innerHTML = ''; await cargarTodo(); render(); aviso('Actuación anulada');
     }
     else if (a === 'levantar') { const r = await sb.rpc('levantar_reserva', { p_codigo: b.dataset.c }); if (r.error) aviso(traducirError(r.error)); else { await cargarTodo(); render(); aviso('Reserva levantada'); } }
+    else if (a === 'salir-como') { S.comoRol = null; S.decidir = null; render(); }
+    else if (a === 'decidir') {
+      const k = b.dataset.k;
+      if (k === 'auto_fija_inicial') { const x = S.acts.find(y => y.codigo === b.dataset.c); S.radProc = x ? x.radicado : null; S.calNueva = null; ir('agenda'); setTimeout(() => { const el = $('f-aud-prog'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 300); return; }
+      S.decidir = { codigo: b.dataset.c, k }; render(); const el = $('f-decidir'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    else if (a === 'decidir-cerrar') { S.decidir = null; render(); }
     else if (a === 'mes') { const d = Number(b.dataset.d); if (!d) S.calMes = hoy().slice(0, 7); else { const [y, m] = S.calMes.split('-').map(Number); const n = new Date(y, m - 1 + d, 1); S.calMes = n.getFullYear() + '-' + pad(n.getMonth() + 1, 2); } render(); }
     else if (a === 'aud-ver') { S.calSel = b.dataset.c; const x = S.acts.find(y => y.codigo === b.dataset.c); if (x && x.audiencia) S.calMes = x.audiencia.fecha.slice(0, 7); if (S.view !== 'agenda') ir('agenda'); else { render(); const el = $('aud-detalle'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }
     else if (a === 'aud-cerrar') { S.calSel = null; render(); }
@@ -513,6 +623,7 @@
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('tr[data-a="abrir"]')) ir('p-' + e.target.dataset.r); if (e.key === 'Escape') $('dialogo').innerHTML = ''; });
   document.addEventListener('change', async e => {
     const t = e.target;
+    if (t.id === 'sel-como') { S.comoRol = t.value || null; S.decidir = null; S.radProc = null; if ((S.view === 'admin' && !esDocente()) || ((S.view === 'radicar' || S.view === 'bandeja') && !puedeRadicar())) ir('consulta'); else render(); aviso(S.comoRol ? 'Ahora ve la plataforma como ' + nombreRol(S.comoRol) : 'Volvió al perfil de docente'); return; }
     if (t.id === 'f-proc') { S.radProc = t.value; dinamicoRadicar(); }
     else if (t.id === 'f-tipo') cambioTipo();
     else if (['f-dias', 'f-fecha', 'f-estado'].includes(t.id)) vistaTermino();
@@ -558,6 +669,7 @@
       if (error) msg.textContent = traducirError(error); else { S.recuperacion = false; aviso('Contraseña actualizada'); ir('consulta'); }
     }
     else if (f.id === 'f-aud-prog') enviarProgramacion();
+    else if (f.id === 'f-decidir') enviarDecision(f);
     else if (f.id === 'f-aud-editar') {
       const msg = $('ae-msg'); const enl = v('ae-enlace');
       if (enl && !RE_MEET.test(enl)) { msg.innerHTML = '<span style="color:var(--rojo)">Use un enlace de Google Meet válido, del tipo https://meet.google.com/abc-defg-hij.</span>'; return; }
@@ -593,6 +705,7 @@
     await cargarPerfil(); await cargarTodo();
     if (S.view === 'proceso') await cargarDocs(S.proc);
     if (S.view === 'admin') await cargarPerfiles();
+    if (S.view === 'bandeja') await cargarDocsTodos();
     S.cargando = false; render();
     sb.auth.onAuthStateChange(async (evento, sesion) => {
       const cambio = (sesion && sesion.user.id) !== (S.session && S.session.user.id);
@@ -603,7 +716,7 @@
       }
     });
     setInterval(async () => {
-      if (document.hidden || S.view === 'radicar' || S.view === 'admin' || (S.view === 'agenda' && esDespacho())) return;
+      if (document.hidden || S.view === 'radicar' || S.view === 'admin' || (S.view === 'agenda' && esDespacho()) || S.decidir) return;
       const ae = document.activeElement; if (ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName)) return;
       await cargarTodo(); if (S.view === 'proceso') await cargarDocs(S.proc); render();
     }, 60000);
